@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 import {
   LiveBattle,
@@ -31,35 +31,64 @@ export interface BattleHandle {
 const LOG_LIMIT = 500;
 
 /**
- * Tracks one live battle in `roomid`, or nothing if `roomid` is null.
+ * Tracks whatever live battle is currently active on `client`, or null if
+ * there isn't one.
  *
- * A battle room gets no explicit `/join` — the server starts routing
- * messages to it the moment the match exists — so this hook's only job is to
- * filter `client`'s message stream down to this one room and feed it to a
- * `LiveBattle`, which does the actual state tracking and text formatting
- * (`packages/battle`, verified against 30 real replays and the live server's
- * actual `/choose` parser — see that package for why it isn't hand-rolled).
+ * This hook owns battle-room *detection* itself, in the same subscription
+ * that feeds the battle — not as two separate listeners coordinated through
+ * React state. That split was tried first and broke: Showdown frequently
+ * sends `|init|battle` together with the room's entire setup burst
+ * (`|player|`, `|gen|`, `|tier|`, ... `|request|`) in one synchronous pass
+ * over one WebSocket frame (`ShowdownClient.handleRaw` emits `message`
+ * synchronously per parsed line, in a plain for-loop). A listener that only
+ * starts once a *different* hook's React state has propagated the roomid
+ * down as a prop is too late — by the time that re-render happens, the
+ * burst has already fired past it with no one subscribed yet, and the
+ * battle screen sits on "waiting to start" forever. Using a ref for the
+ * active roomid, checked synchronously inside one persistent listener,
+ * closes that gap: nothing between "the room was created" and "start
+ * feeding it" can be missed, no matter how the server batches the frame.
  */
-export function useBattle(client: ShowdownClient, roomid: string | null): BattleHandle | null {
-  const liveBattle = useMemo(() => (roomid ? new LiveBattle() : null), [roomid]);
+export function useBattle(client: ShowdownClient): BattleHandle | null {
+  const roomIdRef = useRef<string | null>(null);
+  const liveBattleRef = useRef<LiveBattle | null>(null);
   const nextLogId = useRef(0);
+  const perspectiveResolved = useRef(false);
+
+  const [roomId, setRoomId] = useState<string | null>(null);
   const [log, setLog] = useState<BattleLogLine[]>([]);
   const [perspective, setPerspective] = useState<SideID | undefined>(undefined);
   // `LiveBattle`/`Battle` mutate in place rather than producing new objects
   // per update, so React has no prop/state change to notice on its own —
   // this counter is what forces a re-render after each `feed()`.
   const [, forceRender] = useReducer((n: number) => n + 1, 0);
-  const perspectiveResolved = useRef(false);
 
   useEffect(() => {
-    if (!roomid || !liveBattle) return;
-    setLog([]);
-    setPerspective(undefined);
-    perspectiveResolved.current = false;
-
     const unsubscribe = client.on('message', message => {
-      if (message.roomid !== roomid) return;
+      if (roomIdRef.current === null) {
+        if (message.args[0] === 'init' && message.args[1] === 'battle') {
+          roomIdRef.current = message.roomid;
+          liveBattleRef.current = new LiveBattle();
+          nextLogId.current = 0;
+          perspectiveResolved.current = false;
+          setRoomId(message.roomid);
+          setLog([]);
+          setPerspective(undefined);
+        }
+        // The |init|battle line itself carries no battle state to feed.
+        return;
+      }
 
+      if (message.roomid !== roomIdRef.current) return;
+
+      if (message.args[0] === 'deinit') {
+        roomIdRef.current = null;
+        liveBattleRef.current = null;
+        setRoomId(null);
+        return;
+      }
+
+      const liveBattle = liveBattleRef.current!;
       const text = liveBattle.feed(message.args, message.kwArgs);
       if (text) {
         const line = { id: nextLogId.current++, text: text.trimEnd() };
@@ -88,48 +117,52 @@ export function useBattle(client: ShowdownClient, roomid: string | null): Battle
     });
 
     return unsubscribe;
-  }, [client, roomid, liveBattle]);
+  }, [client]);
 
   const send = useCallback(
     (command: string) => {
-      if (!roomid) return;
+      const activeRoomId = roomIdRef.current;
+      if (!activeRoomId) return;
       // `/choose` (or its bare `/move`, `/switch` shortcuts) is a client chat
       // command, not part of the choice string itself — ChoiceBuilder's
       // output is the bare "move 1|4" the command takes as an argument.
-      client.say(roomid, `/choose ${command}`);
+      client.say(activeRoomId, `/choose ${command}`);
     },
-    [client, roomid],
+    [client],
   );
 
   const chooseMove = useCallback(
     (slot: number, modifiers?: MoveModifiers) => {
-      if (!liveBattle?.battle.request) return;
-      send(buildChooseMove(liveBattle.battle.request, slot, modifiers));
+      const request = liveBattleRef.current?.battle.request;
+      if (!request) return;
+      send(buildChooseMove(request, slot, modifiers));
     },
-    [liveBattle, send],
+    [send],
   );
 
   const chooseSwitch = useCallback(
     (slot: number) => {
-      if (!liveBattle?.battle.request) return;
-      send(buildChooseSwitch(liveBattle.battle.request, slot));
+      const request = liveBattleRef.current?.battle.request;
+      if (!request) return;
+      send(buildChooseSwitch(request, slot));
     },
-    [liveBattle, send],
+    [send],
   );
 
   const chooseTeamOrder = useCallback(
     (order: number[]) => {
-      if (!liveBattle?.battle.request) return;
-      send(buildChooseTeamOrder(liveBattle.battle.request, order));
+      const request = liveBattleRef.current?.battle.request;
+      if (!request) return;
+      send(buildChooseTeamOrder(request, order));
     },
-    [liveBattle, send],
+    [send],
   );
 
-  if (!roomid || !liveBattle) return null;
+  if (!roomId || !liveBattleRef.current) return null;
   return {
-    battle: liveBattle.battle,
+    battle: liveBattleRef.current.battle,
     log,
-    request: liveBattle.battle.request,
+    request: liveBattleRef.current.battle.request,
     perspective,
     chooseMove,
     chooseSwitch,

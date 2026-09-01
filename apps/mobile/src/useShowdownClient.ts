@@ -22,17 +22,6 @@ export interface ShowdownClientHandle {
   username: string | null;
   authError: string | null;
   log: LogEntry[];
-  /**
-   * Roomid of the most recent battle still in progress, or null.
-   *
-   * A battle room needs no `/join`: the server creates it and starts routing
-   * messages to it the moment a match is found or a challenge is accepted, so
-   * this is discovered by watching for its `|init|battle` rather than by any
-   * action the client takes. Tracks only the latest one — on mobile a player
-   * is realistically in at most one battle at a time; multi-battle support
-   * would need a set instead of a single id.
-   */
-  battleRoomId: string | null;
   join(roomid: string): void;
   say(roomid: string, message: string): void;
 }
@@ -62,7 +51,6 @@ export function useShowdownClient(credentials?: Credentials): ShowdownClientHand
   const [username, setUsername] = useState<string | null>(client.username);
   const [authError, setAuthError] = useState<string | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
-  const [battleRoomId, setBattleRoomId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribers = [
@@ -77,14 +65,13 @@ export function useShowdownClient(credentials?: Credentials): ShowdownClientHand
         // Chat lines. @pkmn/protocol normalises the wire shorthand (`|c|`) to
         // `"chat"`; `"c:"` is the distinct timestamped form used for room
         // history on join and has no long form.
+        // Battle-room detection and feeding lives entirely in `useBattle`,
+        // not here — see that hook for why splitting it across two
+        // listeners coordinated through React state loses messages.
         if (args[0] === 'chat') {
           appendLog(setLog, nextLogId, roomid, `${args[1]}: ${args[2]}`);
         } else if (args[0] === 'c:') {
           appendLog(setLog, nextLogId, roomid, `${args[2]}: ${args[3]}`);
-        } else if (args[0] === 'init' && args[1] === 'battle') {
-          setBattleRoomId(roomid);
-        } else if (args[0] === 'deinit') {
-          setBattleRoomId(current => (current === roomid ? null : current));
         }
       }),
     ];
@@ -118,7 +105,7 @@ export function useShowdownClient(credentials?: Credentials): ShowdownClientHand
     client,
   ]);
 
-  return { client, connectionState, session, username, authError, log, battleRoomId, join, say };
+  return { client, connectionState, session, username, authError, log, join, say };
 }
 
 function appendLog(

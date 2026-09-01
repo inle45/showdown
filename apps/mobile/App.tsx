@@ -30,9 +30,9 @@ const LOBBY = 'lobby';
  * or a `/challenge` typed into lobby chat — see the README's known gaps.
  */
 export default function App() {
-  const { client, connectionState, session, username, authError, log, battleRoomId, join, say } =
+  const { client, connectionState, session, username, authError, log, join, say } =
     useShowdownClient();
-  const battle = useBattle(client, battleRoomId);
+  const battle = useBattle(client);
   const [draft, setDraft] = useState('');
 
   useEffect(() => {
