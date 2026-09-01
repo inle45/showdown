@@ -26,9 +26,13 @@ packages/core     Platform-agnostic session layer. No React, no Node builtins.
 packages/battle   Battle state derived from the protocol, via @pkmn/client.
                    Regression-tested against 30 real replays across five
                    formats/generations — see "De-risking battles" below.
-apps/mobile       Expo / React Native app: a single chat screen that proves
-                   the core layer end-to-end (connect, guest auth, join,
-                   send/receive) and keeps the socket in step with AppState.
+                   Also has the live-battle wiring (LiveBattle, choice
+                   builders) the app's battle screen is built on.
+apps/mobile       Expo / React Native app: lobby chat (proves the core
+                   session layer end-to-end) and a live battle screen
+                   (proves packages/battle actually plays, not just
+                   replays) — see "The battle screen" below. Keeps the
+                   socket in step with AppState throughout.
 ```
 
 ### Don't rewrite what `@pkmn` already maintains
@@ -75,6 +79,34 @@ misidentified outcomes, not a subtly wrong HP value or status. A value-level
 oracle — asserting exact per-turn state against a known-correct source —
 would catch more; it's a separate, larger effort than this test claims to
 be.
+
+### The battle screen
+
+`useBattle` + `BattleScreen` (`apps/mobile/src`) turn `packages/battle`'s
+state tracking into something you can actually play. A battle room needs no
+`/join` — the server starts routing to it the moment a match exists — so
+`useShowdownClient` just watches for the room's `|init|battle` and the app
+switches views.
+
+Two things this is built on rather than hand-rolled, both from `@pkmn/view`:
+
+- **`LogFormatter`** renders human-readable battle text ("Gyarados used
+  Waterfall!"), instead of a hand-written translator for the protocol's
+  several hundred message types.
+- **`ChoiceBuilder`** turns a tap ("move 1", "switch 3") into the exact
+  command string the server accepts, and already gets a detail right that
+  Showdown's *own* protocol docs get wrong: `SIM-PROTOCOL.md` documents the
+  Terastallize modifier as `terastalize` (one L); the live server's actual
+  `/choose` parser (`sim/side.ts`, checked directly) only accepts `terastal`
+  or `terastallize` (two Ls). `@pkmn/view` emits the two-L form; a
+  hand-rolled version copying the docs would have shipped a button that
+  silently failed server-side. `choice.test.ts` pins this against ever
+  regressing to the documented-but-non-functional spelling.
+
+Scope for this pass is deliberately singles-only: doubles/triples need
+per-slot targeting and multiple simultaneous choices, team preview is
+tap-to-append rather than drag-to-reorder, and there are no sprites or move
+animations — see Known gaps.
 
 ### Why reconnect is architectural, not a later patch
 
@@ -178,6 +210,31 @@ bundle, not in `tsc --noEmit`:
    costs a little bundle size and runtime perf, buys a build that actually
    compiles. Revisit once upstream ships a hermesc fix for this SDK line.
 
+### Wiring the battle screen surfaced one more real bug, and one real cost
+
+`ShowdownClient`'s `ParsedMessage.args`/`kwArgs` were originally typed as the
+loose `readonly string[]` / `Record<string, unknown>` — a deliberate
+simplification made before anything needed more. Once `useBattle` tried to
+hand a live message straight to `LiveBattle.feed()` (which forwards it to
+`Battle.add()` and `LogFormatter.formatText()`, both of which require
+`@pkmn/protocol`'s real discriminated `ArgType`/`KWArgType`), that widening
+became a real type error rather than a convenience. Fixed at the root —
+tightened `ParsedMessage` to the precise types instead of casting around the
+mismatch in the app — since the values were always actually that type
+(`@pkmn/protocol` is already a `packages/core` dependency) and every existing
+consumer's `args[0] === 'chat'`-style narrowing still typechecks correctly
+against the precise union.
+
+Separately, not a bug: once `packages/battle` (and its `@pkmn/dex` data)
+entered the bundle graph, a cold `expo export -p android` went from
+single-digit seconds to **~17.5 minutes** — `@pkmn/dex` embeds every
+generation's full species/move/item data, and `hermesc`'s native compile of
+that in one bundle is genuinely CPU-bound work, not a hang (confirmed by
+watching worker processes at 80-100%+ CPU throughout). `npx expo start`'s
+first cold bundle will be slow for the same reason; Metro's cache makes
+subsequent incremental rebuilds fast again. Worth knowing before assuming a
+long silent `expo export`/`expo start` first run is stuck.
+
 ## Usage
 
 ```ts
@@ -223,10 +280,13 @@ What has actually been checked, and what has not:
 - ✅ `packages/core`: 28 Vitest tests (mocked WebSocket/fetch, no network),
   `tsc --noEmit`.
 - ✅ `apps/mobile`: `tsc --noEmit`, and `npx expo export -p android` — a real
-  production-mode Metro bundle compiled to Hermes bytecode (~590 modules,
-  ~1.8MB `.hbc`). This is what caught the `.js`-extension resolution bug and
-  the `hermesc`/class-fields bug above; a passing typecheck alone caught
-  neither.
+  production-mode Metro bundle compiled to Hermes bytecode. Caught, in order:
+  the `.js`-extension resolution bug, the `hermesc`/class-fields bug, and (once
+  the battle screen was wired in) a real type error from `ParsedMessage`
+  being too loosely typed — three real bugs a passing typecheck alone caught
+  none of. Currently 608 modules, ~6.25MB `.hbc` (up from ~590 modules,
+  ~1.8MB before `packages/battle`/`@pkmn/dex` entered the graph — see "one
+  more real bug, and one real cost" above for what that did to bundle time).
 - ✅ **Confirmed on a real device, against the live server.** Running in Expo
   Go on Android via `npx expo start`: connects, authenticates as a guest,
   joins `#lobby`, and receives real live chat over the actual `sim3.psim.us`
@@ -240,17 +300,31 @@ What has actually been checked, and what has not:
   restart needed. This was the specific mobile-native behavior this app
   exists to prove, and it's now been seen working on real hardware, not just
   asserted against a mock in `connection.test.ts`.
-- ✅ **`packages/battle`: 31 Vitest tests** replaying 30 real fixtures across
-  5 formats/generations through `@pkmn/client` — see "De-risking battles"
-  above for exactly what this does and doesn't prove.
+- ✅ **`packages/battle`: 36 Vitest tests** — 31 replaying 30 real fixtures
+  across 5 formats/generations through `@pkmn/client` (see "De-risking
+  battles" above for exactly what this does and doesn't prove), plus 5
+  covering the choice-building layer (`chooseMove`/`chooseSwitch`/
+  `chooseTeamOrder`) against a hand-built request fixture — including the
+  Terastallize-spelling regression test described in "The battle screen"
+  above.
+- ❌ **The battle screen has not been used in a real battle.** It compiles
+  and bundles (see above), and its building blocks are tested in isolation —
+  the replay corpus for state tracking, the choice builders for command
+  strings — but nothing has driven an actual live match: no `|request|` has
+  been received from the real server, no move or switch choice has actually
+  been tapped and sent, and the UI has never been visually confirmed to
+  render correctly. This environment has no device to battle from and no way
+  to orchestrate two live accounts into a match. The next real signal is
+  someone opening a real battle on a device and playing at least one turn.
 - ❌ **No password-authenticated login tried yet** — only the guest path
   above. `resolveLoginCommand`'s registered-account branch is unit-tested
   against a mocked login server, not the real one.
 
-The connection layer and the battle state machine both now have real-world
-evidence behind them, not just mocks. What's left unverified is
-account-based login, and — since `packages/battle` only proves the *state*
-layer — any actual battle *rendering*, which doesn't exist yet.
+The connection layer and the battle *state* machine both now have real-world
+evidence behind them, not just mocks. The battle *screen* does not yet —
+"compiles and the pieces are unit-tested" is a materially weaker claim than
+"has been played," and should be read as exactly that until someone actually
+plays a turn on it.
 
 ## Known gaps
 
@@ -267,10 +341,22 @@ layer — any actual battle *rendering*, which doesn't exist yet.
   outside the Play Store.
 - **Account login not verified against the real server** — see Verification
   above.
-- **`packages/battle` proves state, not rendering.** There is no battle
-  screen yet — no sprites, no animations, no move selection. That's the
-  actual remaining work; this corpus only establishes that the state it
-  would render is trustworthy.
+- **The battle screen has never been used in a real battle** — see
+  Verification above. Treat it as unproven until someone actually plays a
+  turn on a device.
+- **Battle screen is singles-only.** No doubles/triples target selection, no
+  Mega Evolution / Z-Move / Dynamax buttons (Terastallize is the only
+  modifier exposed), team preview is tap-to-append rather than
+  drag-to-reorder, and there are no sprites or move animations — just text,
+  an HP bar, and a status badge.
+- **No in-app way to start a battle.** Challenging someone or searching the
+  ladder isn't built; the battle screen only activates once a match already
+  exists (found via another client, or a `/challenge` typed into lobby
+  chat).
+- **Cold bundles are slow** (~17.5 minutes as of `packages/battle`'s
+  `@pkmn/dex` dependency) — see "one more real bug, and one real cost"
+  above. Not a hang; don't assume a long-silent `expo start`/`expo export`
+  first run needs killing.
 - Outbound frames are not queued while offline, by design: a queue would replay
   stale chat after an outage and silently replay connection-scoped auth commands.
   `send()` returns `false` instead, so the UI can decide.

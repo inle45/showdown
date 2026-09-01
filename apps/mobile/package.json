@@ -11,6 +11,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@pkmn/protocol": "^0.7.3",
+    "@pkmn/types": "^4.0.0",
+    "@showdown-mobile/battle": "*",
     "@showdown-mobile/core": "*",
     "expo": "54",
     "expo-status-bar": "~3.0.9",

@@ -15,7 +15,10 @@
   "dependencies": {
     "@pkmn/client": "^0.7.3",
     "@pkmn/data": "^0.10.8",
-    "@pkmn/dex": "^0.10.8"
+    "@pkmn/dex": "^0.10.8",
+    "@pkmn/protocol": "^0.7.3",
+    "@pkmn/types": "^4.0.0",
+    "@pkmn/view": "^0.7.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

@@ -1,4 +1,4 @@
-import { Protocol } from '@pkmn/protocol';
+import { Protocol, type ArgType, type KWArgType } from '@pkmn/protocol';
 
 import { AuthOptions, resolveLoginCommand } from './auth';
 import {
@@ -42,8 +42,16 @@ export type ClientEvents = {
 
 export interface ParsedMessage {
   roomid: string;
-  args: readonly string[];
-  kwArgs: Record<string, unknown>;
+  /**
+   * The precise, discriminated-by-`args[0]` tuple type `@pkmn/protocol`
+   * produces — not widened to `readonly string[]` — so that consumers like
+   * `packages/battle`'s `LiveBattle.feed()` can pass this straight to
+   * `Battle.add()` / `LogFormatter.formatText()`, which require it, without
+   * re-parsing or re-casting. `@pkmn/protocol` is already a dependency here
+   * (used internally for `Protocol.parse`), so this doesn't add one.
+   */
+  args: ArgType;
+  kwArgs: KWArgType;
 }
 
 export interface ShowdownClientOptions extends ConnectionOptions, AuthOptions {
@@ -167,11 +175,7 @@ export class ShowdownClient extends Emitter<ClientEvents> {
     }
 
     for (const { roomid, args, kwArgs } of parsed) {
-      this.emit('message', {
-        roomid: roomid as string,
-        args: args as readonly string[],
-        kwArgs: kwArgs as Record<string, unknown>,
-      });
+      this.emit('message', { roomid, args, kwArgs });
 
       switch (args[0]) {
         case 'challstr':

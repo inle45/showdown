@@ -11,22 +11,28 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
+import { BattleScreen } from './src/BattleScreen';
+import { useBattle } from './src/useBattle';
 import { useShowdownClient, type LogEntry } from './src/useShowdownClient';
 
 const LOBBY = 'lobby';
 
 /**
- * Proves the core session layer end-to-end on a real client: connects,
- * authenticates as a guest, joins the lobby, and round-trips chat — while
- * `useShowdownClient` keeps the socket in step with the app's foreground/
- * background state.
+ * Proves the core session and battle layers end-to-end on a real client:
+ * connects, authenticates, joins the lobby, round-trips chat, and — once a
+ * battle room appears (the server routes to it automatically; no `/join`
+ * needed) — switches to a live battle screen. `useShowdownClient` keeps the
+ * socket in step with the app's foreground/background state throughout.
  *
- * Deliberately just chat: battle rendering and the teambuilder are separate,
- * much larger pieces of work and do not belong on the screen that exists to
- * validate the connection layer.
+ * The teambuilder is still separate, much larger work and doesn't belong
+ * here; there's currently no in-app way to *start* a battle (challenge/
+ * ladder search), only to play one already in progress from another client
+ * or a `/challenge` typed into lobby chat — see the README's known gaps.
  */
 export default function App() {
-  const { connectionState, session, username, authError, log, join, say } = useShowdownClient();
+  const { client, connectionState, session, username, authError, log, battleRoomId, join, say } =
+    useShowdownClient();
+  const battle = useBattle(client, battleRoomId);
   const [draft, setDraft] = useState('');
 
   useEffect(() => {
@@ -58,34 +64,40 @@ export default function App() {
       {username && <Text style={styles.subtitle}>Connected as {username}</Text>}
       {authError && <Text style={styles.error}>{authError}</Text>}
 
-      <FlatList
-        style={styles.log}
-        data={log}
-        keyExtractor={item => String(item.id)}
-        renderItem={({ item }: { item: LogEntry }) => (
-          <Text style={styles.logLine}>{item.text}</Text>
-        )}
-        ListEmptyComponent={<Text style={styles.logLine}>Waiting for lobby chat…</Text>}
-      />
+      {battle ? (
+        <BattleScreen handle={battle} />
+      ) : (
+        <>
+          <FlatList
+            style={styles.log}
+            data={log}
+            keyExtractor={item => String(item.id)}
+            renderItem={({ item }: { item: LogEntry }) => (
+              <Text style={styles.logLine}>{item.text}</Text>
+            )}
+            ListEmptyComponent={<Text style={styles.logLine}>Waiting for lobby chat…</Text>}
+          />
 
-      <View style={styles.composer}>
-        <TextInput
-          style={styles.input}
-          value={draft}
-          onChangeText={setDraft}
-          placeholder={`Message #${LOBBY}`}
-          onSubmitEditing={send}
-          editable={session === 'ready'}
-          returnKeyType="send"
-        />
-        <TouchableOpacity
-          style={[styles.sendButton, session !== 'ready' && styles.sendButtonDisabled]}
-          onPress={send}
-          disabled={session !== 'ready'}
-        >
-          <Text style={styles.sendButtonText}>Send</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.composer}>
+            <TextInput
+              style={styles.input}
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={`Message #${LOBBY}`}
+              onSubmitEditing={send}
+              editable={session === 'ready'}
+              returnKeyType="send"
+            />
+            <TouchableOpacity
+              style={[styles.sendButton, session !== 'ready' && styles.sendButtonDisabled]}
+              onPress={send}
+              disabled={session !== 'ready'}
+            >
+              <Text style={styles.sendButtonText}>Send</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
     </KeyboardAvoidingView>
   );
 }

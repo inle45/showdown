@@ -3,7 +3,8 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@showdown-mobile/core": ["../../packages/core/src/index.ts"]
+      "@showdown-mobile/core": ["../../packages/core/src/index.ts"],
+      "@showdown-mobile/battle": ["../../packages/battle/src/index.ts"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"]
