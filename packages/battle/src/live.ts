@@ -42,6 +42,29 @@ export class LiveBattle {
   feed(args: ArgType, kwArgs: KWArgType = {}): string {
     const text = this.formatter.formatText(args, kwArgs);
     this.battle.add(args, kwArgs);
-    return text;
+    return text ? stripSpoilerMarkup(text) : text;
   }
+}
+
+/**
+ * Strips Showdown's Discord-style spoiler markup, `||hover-text||visible-text||`.
+ *
+ * `@pkmn/client`'s `Battle.damagePercentage()` (used as `LogFormatter`'s
+ * `Tracker`) deliberately emits this whenever a Pokémon's max HP isn't
+ * normalized to 100 — which is essentially always for a live player's own
+ * side, since a connected player always sees their own HP as an exact
+ * fraction regardless of a format's "HP Percentage Mod" rule (that rule
+ * only affects what the *opponent* sees). Confirmed empirically: every
+ * `-damage` line in the real replay corpus with a non-100 max HP produces
+ * this wrapped form, not just an edge case.
+ *
+ * The official web client renders this as a tap/hover-to-reveal spoiler
+ * (the feature this syntax was added for). A plain-text log doesn't have
+ * that interaction, so this keeps only the visible half — e.g.
+ * `"(Ceruledge lost ||−245/245||100%|| of its health!)"` becomes
+ * `"(Ceruledge lost 100% of its health!)"` — rather than leaking the raw
+ * markup as if it were a formatting bug.
+ */
+function stripSpoilerMarkup(text: string): string {
+  return text.replace(/\|\|.*?\|\|(.*?)\|\|/g, '$1');
 }
