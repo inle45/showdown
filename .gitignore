@@ -19,3 +19,7 @@ ios/
 .DS_Store
 .idea/
 .vscode/
+
+# Expo dev artifacts
+apps/mobile/.expo/
+apps/mobile/web-build/

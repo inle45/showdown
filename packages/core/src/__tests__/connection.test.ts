@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ShowdownConnection } from '../connection.js';
-import { MockWebSocket } from './mock-websocket.js';
+import { ShowdownConnection } from '../connection';
+import { MockWebSocket } from './mock-websocket';
 
 function makeConnection(overrides: Partial<ConstructorParameters<typeof ShowdownConnection>[0]> = {}) {
   return new ShowdownConnection({

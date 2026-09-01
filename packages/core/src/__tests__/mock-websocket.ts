@@ -1,4 +1,4 @@
-import type { WebSocketLike } from '../types.js';
+import type { WebSocketLike } from '../types';
 
 /**
  * A WebSocket the test drives by hand.

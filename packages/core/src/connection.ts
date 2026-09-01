@@ -1,11 +1,11 @@
-import { BackoffOptions, DEFAULT_BACKOFF, backoffDelay } from './backoff.js';
-import { Emitter } from './emitter.js';
+import { BackoffOptions, DEFAULT_BACKOFF, backoffDelay } from './backoff';
+import { Emitter } from './emitter';
 import {
   ConnectionState,
   DEFAULT_SERVER_URL,
   WebSocketFactory,
   WebSocketLike,
-} from './types.js';
+} from './types';
 
 // A type alias rather than an interface: only aliases get the implicit index
 // signature that `Emitter`'s `Record<string, unknown>` constraint requires.

@@ -1,6 +1,6 @@
 import { Actions } from '@pkmn/login';
 
-import { Credentials, FetchLike, ShowdownAuthError } from './types.js';
+import { Credentials, FetchLike, ShowdownAuthError } from './types';
 
 export interface AuthOptions {
   /** Override the login server (self-hosted servers use their own). */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_BACKOFF, backoffDelay } from '../backoff.js';
+import { DEFAULT_BACKOFF, backoffDelay } from '../backoff';
 
 describe('backoffDelay', () => {
   const noJitter = () => 0;

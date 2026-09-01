@@ -1,18 +1,18 @@
 import { Protocol } from '@pkmn/protocol';
 
-import { AuthOptions, resolveLoginCommand } from './auth.js';
+import { AuthOptions, resolveLoginCommand } from './auth';
 import {
   ConnectionOptions,
   ConnectionEvents,
   ShowdownConnection,
-} from './connection.js';
-import { Emitter } from './emitter.js';
+} from './connection';
+import { Emitter } from './emitter';
 import {
   ConnectionState,
   Credentials,
   FetchLike,
   ShowdownAuthError,
-} from './types.js';
+} from './types';
 
 export type SessionState =
   /** No usable socket. */

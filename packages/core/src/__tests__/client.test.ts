@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ShowdownClient } from '../client.js';
-import type { FetchLike } from '../types.js';
-import { MockWebSocket } from './mock-websocket.js';
+import { ShowdownClient } from '../client';
+import type { FetchLike } from '../types';
+import { MockWebSocket } from './mock-websocket';
 
 /** What Showdown's login server returns for a successful password login. */
 const LOGIN_OK = ']{"curuser":{"loggedin":true},"assertion":"ASSERTION123"}';
