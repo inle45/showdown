@@ -200,18 +200,26 @@ What has actually been checked, and what has not:
   ~1.8MB `.hbc`). This is what caught the `.js`-extension resolution bug and
   the `hermesc`/class-fields bug above; a passing typecheck alone caught
   neither.
-- ❌ **Not run on a device, emulator, or simulator.** This environment has no
-  Android/iOS emulator and no way to tap through the app. The screen has not
-  been visually confirmed to render correctly, and `AppState` transitions
-  have not been exercised against a real background/foreground cycle —
-  only read from the React Native docs.
-- ❌ **Not run against the live Showdown server or a local one.** No guest
-  connect, login, join, or chat round-trip has actually happened over a
-  socket — only against the mocked one in tests.
+- ✅ **Confirmed on a real device, against the live server.** Running in Expo
+  Go on Android via `npx expo start`: connects, authenticates as a guest,
+  joins `#lobby`, and receives real live chat over the actual `sim3.psim.us`
+  socket. This is the first evidence that `ShowdownConnection`,
+  `ShowdownClient`, `useShowdownClient`, and the Metro/Hermes build all work
+  together outside a mock — everything above this line was necessary but not
+  sufficient on its own.
+- ❌ **`AppState` background/foreground transitions not yet exercised on
+  device.** `suspend()`/`resume()` are unit-tested against a mock connection
+  (see `connection.test.ts`), and the app wires them to `AppState`, but
+  nobody has actually backgrounded the app on a phone and confirmed the
+  socket suspends and cleanly reconnects on return. This is the next thing
+  to actually try.
+- ❌ **No password-authenticated login tried yet** — only the guest path
+  above. `resolveLoginCommand`'s registered-account branch is unit-tested
+  against a mocked login server, not the real one.
 
-Treat the mobile app as *compiles and typechecks cleanly*, not as *verified
-working*. The next real signal is running it in Expo Go or a built APK against
-a local Showdown server.
+The connection layer works end to end against the real world. What's still
+unverified is specifically the mobile-native behavior this app exists to
+prove — backgrounding — and real-account login.
 
 ## Known gaps
 
