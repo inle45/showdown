@@ -26,6 +26,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
+    # Needed to publish the APK as a release asset, which is what makes it
+    # installable straight from a phone browser.
+    permissions:
+      contents: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +45,19 @@ jobs:
           java-version: 17
 
       - uses: android-actions/setup-android@v3
+
+      # The first release build took 22 minutes, nearly all of it Gradle
+      # resolving dependencies and compiling from cold. Keyed on the Gradle
+      # wrapper and build scripts, which `prebuild` regenerates deterministically
+      # from app.json, so the key only changes when the native config does.
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/mobile/app.json', 'apps/mobile/package.json', 'package-lock.json') }}
+          restore-keys: gradle-${{ runner.os }}-
 
       - name: Install dependencies
         run: npm ci
@@ -76,3 +94,28 @@ jobs:
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 30
+
+      # Actions artifacts are only served as ZIPs, and only to users who are
+      # signed in — awkward on a phone, where extracting an archive means
+      # installing a file manager first. A release asset is a plain .apk over
+      # a direct link, so Android's browser hands it straight to the package
+      # installer. /releases/latest always points at the newest build.
+      - name: Publish the APK as a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="apk-${GITHUB_SHA::7}"
+          # Re-running a build for the same commit should replace its release
+          # rather than fail on the existing tag.
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" "dist/${{ steps.rename.outputs.name }}.apk" \
+            --target "$GITHUB_SHA" \
+            --title "Showdown Mobile ${GITHUB_SHA::7}" \
+            --notes 'Tap the `.apk` below to install. Requires Android 7.0 or
+          newer, and permission to install from your browser.
+
+          Signed with the Android debug keystore that ships in the Expo
+          template, so it installs by sideloading only and must never be
+          published to a store as-is. That keystore is fixed rather than
+          generated per build, so each new version installs over the previous
+          one without an uninstall.'

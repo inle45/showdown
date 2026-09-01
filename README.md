@@ -261,11 +261,18 @@ Omit `credentials` to browse as a guest; no login request is made.
 ## Getting the app on a phone
 
 **You do not need a local toolchain, an emulator, or Termux.** Every push
-builds an installable APK in CI:
+builds an installable APK in CI and publishes it two ways.
 
-1. Open the repo's **Actions** tab on GitHub (works fine in a phone browser).
-2. Pick the most recent **Build Android APK** run.
-3. Download the `showdown-mobile-<sha>` artifact and install the APK inside.
+**From a phone**, open **[/releases/latest][latest]** and tap the `.apk`.
+Android hands a direct `.apk` link straight to the package installer, so
+there is nothing to extract.
+
+[latest]: https://github.com/inle45/showdown/releases/latest
+
+**From a desktop**, or to grab a build other than the newest, the same APK
+is attached to its workflow run: **Actions** → the run → the
+`showdown-mobile-<sha>` artifact. Note that Actions only serves artifacts as
+ZIPs, and only to signed-in users — which is exactly why the release exists.
 
 It's the **release** variant, signed with the debug keystore Expo's template
 already configures for it. Both halves of that matter:
@@ -283,6 +290,12 @@ already configures for it. Both halves of that matter:
 Android will warn when installing an APK from outside the Play Store —
 expected. The workflow runs the full typecheck and test suites before
 building, so a red build never produces an APK.
+
+Verified against the first release artifact rather than assumed: it carries
+`assets/index.android.bundle` (4.4 MB, starting with Hermes' `c6 1f bc 03`
+magic, so compiled bytecode rather than source), an APK signing block, and
+native libraries for all four ABIs. Its manifest declares **minSdk 24
+(Android 7.0)** and targetSdk 36; the APK is ~60 MB installed.
 
 The dev-server path (`npx expo start` + Expo Go) still works and is faster
 for iterating; it's just no longer the only way in.
