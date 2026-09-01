@@ -267,11 +267,22 @@ builds an installable APK in CI:
 2. Pick the most recent **Build Android APK** run.
 3. Download the `showdown-mobile-<sha>` artifact and install the APK inside.
 
-It's a **debug** build on purpose: a release APK must be signed, and an
-unsigned one won't install at all, whereas debug builds use Android's
-universally-available debug keystore. Android will warn about installing it —
-expected for a build that isn't store-signed. The workflow runs the full
-typecheck and test suites first, so a red build never produces an APK.
+It's the **release** variant, signed with the debug keystore Expo's template
+already configures for it. Both halves of that matter:
+
+- **Release, not debug** — React Native only embeds the JS bundle into
+  variants outside `debuggableVariants` (default: `["debug"]`). A debug APK
+  goes looking for a Metro dev server at runtime, which would put you right
+  back on the workflow this exists to avoid.
+- **Debug keystore** — a release APK must be signed to install at all. That
+  keystore is a fixed template asset (verified byte-identical across
+  prebuilds), so updates install over each other instead of forcing an
+  uninstall. It's also the well-known public one, so this build is fine for
+  your own phone and must never be published to a store as-is.
+
+Android will warn when installing an APK from outside the Play Store —
+expected. The workflow runs the full typecheck and test suites before
+building, so a red build never produces an APK.
 
 The dev-server path (`npx expo start` + Expo Go) still works and is faster
 for iterating; it's just no longer the only way in.

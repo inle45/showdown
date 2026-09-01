@@ -3,11 +3,18 @@ name: Build Android APK
 # Builds an installable APK in CI so it can be downloaded straight to a phone
 # from GitHub's web UI — no local Android toolchain, and no Termux.
 #
-# Deliberately a *debug* build: a release APK has to be signed, and an
-# unsigned one won't install on a device at all. Debug builds are signed with
-# Android's universally-available debug keystore, so they install fine.
-# Trade-off: Android will warn on install, and this is not a build to ship to
-# a store — it's a build to actually use the app.
+# Builds the *release* variant, not debug, for one decisive reason: React
+# Native only embeds the JS bundle into variants outside `debuggableVariants`
+# (which defaults to `["debug"]`). A debug APK expects to fetch its JS from a
+# running Metro dev server, so installing one would put you right back on the
+# dev-server workflow this exists to avoid.
+#
+# Release APKs must be signed to install at all, and Expo's template already
+# points the release buildType at the bundled debug keystore — verified to be
+# a fixed template asset, byte-identical across prebuilds, so updates install
+# over each other rather than demanding an uninstall. That keystore is the
+# well-known public one, so this APK is fine for sideloading onto your own
+# phone and must never be published to a store as-is.
 on:
   push:
     branches: ['**']
@@ -53,13 +60,13 @@ jobs:
 
       - name: Build APK
         working-directory: apps/mobile/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Name the APK after the commit
         id: rename
         run: |
           mkdir -p dist
-          cp apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk \
+          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk \
              "dist/showdown-mobile-${GITHUB_SHA::7}.apk"
           echo "name=showdown-mobile-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
