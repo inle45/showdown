@@ -5,6 +5,7 @@ import {
   chooseMove as buildChooseMove,
   chooseSwitch as buildChooseSwitch,
   chooseTeamOrder as buildChooseTeamOrder,
+  isSameUser,
   type MoveModifiers,
 } from '@showdown-mobile/battle';
 import type { ShowdownClient } from '@showdown-mobile/core';
@@ -102,11 +103,17 @@ export function useBattle(client: ShowdownClient): BattleHandle | null {
       // text reads "you" rather than a spectator's neutral third-person view.
       if (!perspectiveResolved.current) {
         const { p1, p2 } = liveBattle.battle;
-        if (p1.name && p1.name === client.username) {
+        const myUsername = client.username;
+        // Raw name equality is wrong here: `|updateuser|` prefixes an
+        // unranked username with a leading space (the empty rank-symbol
+        // slot) that `|player|` doesn't carry, so `p.name === myUsername`
+        // silently never matches for a guest — confirmed live, see
+        // packages/battle's isSameUser for the exact bytes.
+        if (myUsername && p1.name && isSameUser(p1.name, myUsername)) {
           liveBattle.setPerspective('p1');
           perspectiveResolved.current = true;
           setPerspective('p1');
-        } else if (p2.name && p2.name === client.username) {
+        } else if (myUsername && p2.name && isSameUser(p2.name, myUsername)) {
           liveBattle.setPerspective('p2');
           perspectiveResolved.current = true;
           setPerspective('p2');
