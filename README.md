@@ -97,6 +97,60 @@ Vitest, Metro) handle natively. This is the reason `expo export -p android`
 (an actual Hermes bytecode bundle, not just a type check) is treated as the
 real verification step for this package — see Verification below.
 
+### Pinned to Expo SDK 54, not the latest SDK
+
+The app targets SDK 54, one behind the SDK the tooling scaffolds by default,
+because the **Play Store build of Expo Go is currently stuck on SDK 54** —
+Expo's changelog cites App Store approval delays holding back the store
+release, and each Expo Go build supports exactly one SDK, with no
+backward compatibility. A project on a newer SDK just fails to open in
+Expo Go from the Play Store with "Project is incompatible with this version
+of Expo Go," regardless of how current that install actually is. The
+alternative was sideloading a matching Expo Go APK from expo.dev/go outside
+the Play Store, re-done on every future SDK bump; pinning to 54 keeps the
+zero-friction path of installing Expo Go from the Play Store and scanning a
+QR code. Revisit this once the Play Store build catches up.
+
+Downgrading an SDK version is not just editing one line: `expo`,
+`react-native`, `react`, `@types/react`, and `typescript` all have to move
+together to versions the SDK actually pairs with, and those pairings aren't
+guessable — get one wrong and you get confusing runtime errors rather than a
+clean failure. `npx expo install expo@54 && npx expo install --fix` (see
+[Expo's SDK walkthrough](https://docs.expo.dev/workflow/upgrading-expo-sdk-walkthrough/))
+does this correctly by reading it from Expo's own compatibility data rather
+than guessing.
+
+That downgrade surfaced two more real bugs, both only visible in an actual
+bundle, not in `tsc --noEmit`:
+
+1. **Stale hoisted `babel-preset-expo`.** Running `expo install` commands
+   incrementally on top of an already-`npm install`ed SDK-57 tree left a
+   `babel-preset-expo@57.0.9` hoisted at the workspace root, shadowing the
+   correct `54.0.12` copy nested under `expo`'s own `node_modules`. Node's
+   module resolution silently preferred the stale hoisted one. The preset
+   version transforms code differently depending on the target SDK, so the
+   app was being compiled for SDK 57 while everything else in the tree had
+   moved to 54. Fixed with a clean reinstall (`rm -rf node_modules
+   package-lock.json` at the workspace root, then `npm install`) rather than
+   trying to patch an incrementally-mutated dependency tree — the standard
+   fix for hoisting corruption after a mid-tree version change.
+
+2. **`hermesc` (react-native 0.81.5's bundled Hermes compiler, which SDK 54
+   pins) rejects plain class field declarations** (`private attempt = 0;` —
+   standard, non-private ES2022 class fields) with "invalid statement
+   encountered." `babel-preset-expo` defaults to
+   `unstable_transformProfile: 'hermes-stable'` for the Hermes engine, which
+   deliberately leaves modern class syntax untranspiled on the assumption
+   that Hermes parses it natively — an assumption this SDK 54 / RN 0.81.5
+   hermesc build doesn't hold up on, and a documented, recurring class of
+   bug for this exact SDK/RN pairing (e.g.
+   [expo/expo#46064](https://github.com/expo/expo/issues/46064)). Worked
+   around by pinning `unstable_transformProfile: 'default'` in
+   `apps/mobile/babel.config.js`, which forces Babel to transpile classes to
+   the ES5-compatible constructor-function form regardless of engine —
+   costs a little bundle size and runtime perf, buys a build that actually
+   compiles. Revisit once upstream ships a hermesc fix for this SDK line.
+
 ## Usage
 
 ```ts
@@ -142,9 +196,10 @@ What has actually been checked, and what has not:
 - ✅ `packages/core`: 28 Vitest tests (mocked WebSocket/fetch, no network),
   `tsc --noEmit`.
 - ✅ `apps/mobile`: `tsc --noEmit`, and `npx expo export -p android` — a real
-  production-mode Metro bundle compiled to Hermes bytecode (591 modules,
-  ~1.5MB `.hbc`). This is what caught the `.js`-extension resolution bug above;
-  a passing typecheck alone would not have.
+  production-mode Metro bundle compiled to Hermes bytecode (~590 modules,
+  ~1.8MB `.hbc`). This is what caught the `.js`-extension resolution bug and
+  the `hermesc`/class-fields bug above; a passing typecheck alone caught
+  neither.
 - ❌ **Not run on a device, emulator, or simulator.** This environment has no
   Android/iOS emulator and no way to tap through the app. The screen has not
   been visually confirmed to render correctly, and `AppState` transitions
