@@ -23,6 +23,9 @@ built first.
 
 ```
 packages/core     Platform-agnostic session layer. No React, no Node builtins.
+packages/battle   Battle state derived from the protocol, via @pkmn/client.
+                   Regression-tested against 30 real replays across five
+                   formats/generations — see "De-risking battles" below.
 apps/mobile       Expo / React Native app: a single chat screen that proves
                    the core layer end-to-end (connect, guest auth, join,
                    send/receive) and keeps the socket in step with AppState.
@@ -48,6 +51,30 @@ agnostic** — so it runs unmodified on Hermes with React Native's `fetch`.
 
 The practical consequence is that the remaining work on battles is *rendering*,
 not simulation.
+
+### De-risking battles before building on top of them
+
+Every prior client got chat working and stalled on battles. Rather than find
+that out after building a battle screen on top of `@pkmn/client`,
+`packages/battle` checks the foundation first: `npm run fetch-fixtures` pulls
+a small, real corpus from Showdown's public replay API — 30 replays spanning
+singles, doubles, random battles, the current generation, and Gen 1 — and
+`replayLog()` feeds each one through a fresh `Battle` line by line. The test
+suite asserts every fixture reaches a clean `|win|`/`|tie|` without an
+exception, and that the winner the server announced is actually one of the
+two players `Battle` tracked.
+
+That last check exists because `Battle.add` turned out to be deliberately
+tolerant: it doesn't throw on a message it doesn't recognize, degrading to
+placeholder data instead of crashing (verified by hand — feeding it a
+garbage `|move|` line with a nonexistent move and nonexistent Pokémon
+produced no error at all). Good behavior for a client staying alive against
+protocol messages it doesn't know about yet, but it means "no exception" is
+a weaker signal than it first looks: this corpus catches crashes and
+misidentified outcomes, not a subtly wrong HP value or status. A value-level
+oracle — asserting exact per-turn state against a known-correct source —
+would catch more; it's a separate, larger effort than this test claims to
+be.
 
 ### Why reconnect is architectural, not a later patch
 
@@ -207,19 +234,23 @@ What has actually been checked, and what has not:
   `ShowdownClient`, `useShowdownClient`, and the Metro/Hermes build all work
   together outside a mock — everything above this line was necessary but not
   sufficient on its own.
-- ❌ **`AppState` background/foreground transitions not yet exercised on
-  device.** `suspend()`/`resume()` are unit-tested against a mock connection
-  (see `connection.test.ts`), and the app wires them to `AppState`, but
-  nobody has actually backgrounded the app on a phone and confirmed the
-  socket suspends and cleanly reconnects on return. This is the next thing
-  to actually try.
+- ✅ **`AppState` background/foreground transitions confirmed on device.**
+  Backgrounded the app for 10-15s and returned: the connection badge cycled
+  through `reconnecting` back to online and the lobby kept working, with no
+  restart needed. This was the specific mobile-native behavior this app
+  exists to prove, and it's now been seen working on real hardware, not just
+  asserted against a mock in `connection.test.ts`.
+- ✅ **`packages/battle`: 31 Vitest tests** replaying 30 real fixtures across
+  5 formats/generations through `@pkmn/client` — see "De-risking battles"
+  above for exactly what this does and doesn't prove.
 - ❌ **No password-authenticated login tried yet** — only the guest path
   above. `resolveLoginCommand`'s registered-account branch is unit-tested
   against a mocked login server, not the real one.
 
-The connection layer works end to end against the real world. What's still
-unverified is specifically the mobile-native behavior this app exists to
-prove — backgrounding — and real-account login.
+The connection layer and the battle state machine both now have real-world
+evidence behind them, not just mocks. What's left unverified is
+account-based login, and — since `packages/battle` only proves the *state*
+layer — any actual battle *rendering*, which doesn't exist yet.
 
 ## Known gaps
 
@@ -234,8 +265,12 @@ prove — backgrounding — and real-account login.
   make this app AGPLv3 too. Distribution also has to account for Pokémon IP and
   fan-made sprites — existing unofficial clients are generally distributed
   outside the Play Store.
-- **Not verified on a device or against a real server** — see Verification
+- **Account login not verified against the real server** — see Verification
   above.
+- **`packages/battle` proves state, not rendering.** There is no battle
+  screen yet — no sprites, no animations, no move selection. That's the
+  actual remaining work; this corpus only establishes that the state it
+  would render is trustworthy.
 - Outbound frames are not queued while offline, by design: a queue would replay
   stale chat after an outage and silently replay connection-scoped auth commands.
   `send()` returns `false` instead, so the UI can decide.
