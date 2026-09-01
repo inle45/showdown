@@ -258,6 +258,24 @@ client.resume();  // foregrounded — reconnects immediately, no backoff wait
 
 Omit `credentials` to browse as a guest; no login request is made.
 
+## Getting the app on a phone
+
+**You do not need a local toolchain, an emulator, or Termux.** Every push
+builds an installable APK in CI:
+
+1. Open the repo's **Actions** tab on GitHub (works fine in a phone browser).
+2. Pick the most recent **Build Android APK** run.
+3. Download the `showdown-mobile-<sha>` artifact and install the APK inside.
+
+It's a **debug** build on purpose: a release APK must be signed, and an
+unsigned one won't install at all, whereas debug builds use Android's
+universally-available debug keystore. Android will warn about installing it —
+expected for a build that isn't store-signed. The workflow runs the full
+typecheck and test suites first, so a red build never produces an APK.
+
+The dev-server path (`npx expo start` + Expo Go) still works and is faster
+for iterating; it's just no longer the only way in.
+
 ## Development
 
 ```sh

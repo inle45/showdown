@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,28 +13,30 @@ import {
 import { StatusBar } from 'expo-status-bar';
 
 import { BattleScreen } from './src/BattleScreen';
+import { theme } from './src/theme';
 import { useBattle } from './src/useBattle';
 import { useShowdownClient, type LogEntry } from './src/useShowdownClient';
 
 const LOBBY = 'lobby';
+/** Formats offered by the quick-search buttons, newest generation first. */
+const QUICK_FORMATS = [
+  { id: 'gen9randombattle', label: 'Random Battle' },
+  { id: 'gen9ou', label: 'Gen 9 OU' },
+  { id: 'gen9randomdoublesbattle', label: 'Random Doubles' },
+];
 
 /**
- * Proves the core session and battle layers end-to-end on a real client:
- * connects, authenticates, joins the lobby, round-trips chat, and — once a
- * battle room appears (the server routes to it automatically; no `/join`
- * needed) — switches to a live battle screen. `useShowdownClient` keeps the
- * socket in step with the app's foreground/background state throughout.
- *
- * The teambuilder is still separate, much larger work and doesn't belong
- * here; there's currently no in-app way to *start* a battle (challenge/
- * ladder search), only to play one already in progress from another client
- * or a `/challenge` typed into lobby chat — see the README's known gaps.
+ * Connects, authenticates, and shows either the lobby or — once a battle
+ * room appears (the server routes to it automatically; no `/join` needed) —
+ * the battle screen. `useShowdownClient` keeps the socket in step with the
+ * app's foreground/background state throughout.
  */
 export default function App() {
   const { client, connectionState, session, username, authError, log, join, say } =
     useShowdownClient();
   const battle = useBattle(client);
   const [draft, setDraft] = useState('');
+  const [searching, setSearching] = useState<string | null>(null);
 
   useEffect(() => {
     // `join` is idempotent and re-run by the hook itself after every
@@ -42,6 +45,11 @@ export default function App() {
     if (session === 'ready') join(LOBBY);
   }, [session, join]);
 
+  // A battle starting means the search that queued it is done.
+  useEffect(() => {
+    if (battle) setSearching(null);
+  }, [battle]);
+
   const send = () => {
     const message = draft.trim();
     if (!message) return;
@@ -49,56 +57,134 @@ export default function App() {
     setDraft('');
   };
 
+  const search = (format: string) => {
+    say(LOBBY, `/search ${format}`);
+    setSearching(format);
+  };
+
+  const cancelSearch = () => {
+    if (searching) say(LOBBY, `/cancelsearch ${searching}`);
+    setSearching(null);
+  };
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <StatusBar style="auto" />
-
-      <View style={styles.header}>
-        <Text style={styles.title}>Showdown Mobile</Text>
-        <StatusBadge connectionState={connectionState} session={session} />
-      </View>
-
-      {username && <Text style={styles.subtitle}>Connected as {username}</Text>}
-      {authError && <Text style={styles.error}>{authError}</Text>}
-
-      {battle ? (
-        <BattleScreen handle={battle} />
-      ) : (
-        <>
-          <FlatList
-            style={styles.log}
-            data={log}
-            keyExtractor={item => String(item.id)}
-            renderItem={({ item }: { item: LogEntry }) => (
-              <Text style={styles.logLine}>{item.text}</Text>
-            )}
-            ListEmptyComponent={<Text style={styles.logLine}>Waiting for lobby chat…</Text>}
-          />
-
-          <View style={styles.composer}>
-            <TextInput
-              style={styles.input}
-              value={draft}
-              onChangeText={setDraft}
-              placeholder={`Message #${LOBBY}`}
-              onSubmitEditing={send}
-              editable={session === 'ready'}
-              returnKeyType="send"
-            />
-            <TouchableOpacity
-              style={[styles.sendButton, session !== 'ready' && styles.sendButtonDisabled]}
-              onPress={send}
-              disabled={session !== 'ready'}
-            >
-              <Text style={styles.sendButtonText}>Send</Text>
-            </TouchableOpacity>
+    <SafeAreaView style={styles.safe}>
+      <StatusBar style="light" />
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.header}>
+          <View style={styles.titleBlock}>
+            <Text style={styles.title}>Showdown</Text>
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {username ? username.trim() : 'connecting…'}
+            </Text>
           </View>
-        </>
-      )}
-    </KeyboardAvoidingView>
+          <StatusBadge connectionState={connectionState} session={session} />
+        </View>
+
+        {authError && <Text style={styles.error}>{authError}</Text>}
+
+        {battle ? (
+          <BattleScreen handle={battle} />
+        ) : (
+          <>
+            <SearchBar
+              disabled={session !== 'ready'}
+              searching={searching}
+              onSearch={search}
+              onCancel={cancelSearch}
+            />
+            <ChatLog log={log} />
+            <View style={styles.composer}>
+              <TextInput
+                style={styles.input}
+                value={draft}
+                onChangeText={setDraft}
+                placeholder={`Message #${LOBBY}`}
+                placeholderTextColor={theme.color.textMuted}
+                onSubmitEditing={send}
+                editable={session === 'ready'}
+                returnKeyType="send"
+              />
+              <TouchableOpacity
+                style={[styles.sendButton, session !== 'ready' && styles.buttonDisabled]}
+                onPress={send}
+                disabled={session !== 'ready'}
+              >
+                <Text style={styles.sendText}>Send</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+function SearchBar({
+  disabled,
+  searching,
+  onSearch,
+  onCancel,
+}: {
+  disabled: boolean;
+  searching: string | null;
+  onSearch(format: string): void;
+  onCancel(): void;
+}) {
+  if (searching) {
+    const label = QUICK_FORMATS.find(f => f.id === searching)?.label ?? searching;
+    return (
+      <View style={styles.searchBar}>
+        <Text style={styles.searchingText}>Searching for a {label} match…</Text>
+        <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
+          <Text style={styles.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.searchBar}>
+      {QUICK_FORMATS.map(format => (
+        <TouchableOpacity
+          key={format.id}
+          style={[styles.searchButton, disabled && styles.buttonDisabled]}
+          disabled={disabled}
+          onPress={() => onSearch(format.id)}
+        >
+          <Text style={styles.searchButtonText}>{format.label}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+function ChatLog({ log }: { log: LogEntry[] }) {
+  const listRef = useRef<FlatList<LogEntry>>(null);
+  return (
+    <FlatList
+      ref={listRef}
+      style={styles.log}
+      data={log}
+      keyExtractor={item => String(item.id)}
+      renderItem={({ item }) => <ChatLine entry={item} />}
+      ListEmptyComponent={<Text style={styles.logMuted}>Waiting for lobby chat…</Text>}
+      onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+    />
+  );
+}
+
+function ChatLine({ entry }: { entry: LogEntry }) {
+  const separator = entry.text.indexOf(':');
+  if (separator <= 0) return <Text style={styles.chatText}>{entry.text}</Text>;
+  return (
+    <Text style={styles.chatLine}>
+      <Text style={styles.chatAuthor}>{entry.text.slice(0, separator).trim()}</Text>
+      <Text style={styles.chatText}>{entry.text.slice(separator)}</Text>
+    </Text>
   );
 }
 
@@ -109,56 +195,92 @@ function StatusBadge({
   connectionState: string;
   session: string;
 }) {
-  const label = session === 'ready' ? 'online' : connectionState;
-  const color =
-    session === 'ready'
-      ? '#2e7d32'
-      : connectionState === 'reconnecting'
-        ? '#ed6c02'
-        : connectionState === 'connecting'
-          ? '#ed6c02'
-          : '#c62828';
+  const online = session === 'ready';
+  const pending = connectionState === 'connecting' || connectionState === 'reconnecting';
+  const color = online ? theme.color.good : pending ? theme.color.warn : theme.color.bad;
   return (
-    <View style={[styles.badge, { backgroundColor: color }]}>
-      <Text style={styles.badgeText}>{label}</Text>
+    <View style={styles.badge}>
+      <View style={[styles.badgeDot, { backgroundColor: color }]} />
+      <Text style={styles.badgeText}>{online ? 'online' : connectionState}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.color.bg },
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    paddingTop: Platform.OS === 'android' ? 32 : 60,
-    paddingHorizontal: 16,
+    paddingHorizontal: theme.space(4),
+    paddingTop: Platform.OS === 'android' ? theme.space(6) : 0,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingBottom: theme.space(2),
   },
-  title: { fontSize: 20, fontWeight: '600' },
-  subtitle: { color: '#555', marginTop: 4 },
-  error: { color: '#c62828', marginTop: 4 },
-  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  badgeText: { color: '#fff', fontSize: 12, fontWeight: '600', textTransform: 'uppercase' },
-  log: { flex: 1, marginTop: 16 },
-  logLine: { paddingVertical: 3, color: '#222' },
-  composer: { flexDirection: 'row', gap: 8, paddingVertical: 12 },
+  titleBlock: { flexShrink: 1 },
+  title: { color: theme.color.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  subtitle: { color: theme.color.textMuted, fontSize: 12 },
+  error: { color: theme.color.bad, paddingVertical: theme.space(1) },
+
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space(1.5),
+    backgroundColor: theme.color.surface,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: theme.space(3),
+    paddingVertical: theme.space(1.5),
+  },
+  badgeDot: { width: 8, height: 8, borderRadius: 4 },
+  badgeText: { color: theme.color.textMuted, fontSize: 11, fontWeight: '600' },
+
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: theme.space(2),
+    paddingVertical: theme.space(2),
+  },
+  searchButton: {
+    backgroundColor: theme.color.accent,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: theme.space(4),
+    paddingVertical: theme.space(2),
+  },
+  searchButtonText: { color: theme.color.accentText, fontWeight: '700', fontSize: 12 },
+  searchingText: { color: theme.color.textMuted, flex: 1, fontSize: 13 },
+  cancelButton: {
+    borderWidth: 1,
+    borderColor: theme.color.border,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: theme.space(3),
+    paddingVertical: theme.space(1.5),
+  },
+  cancelText: { color: theme.color.textMuted, fontSize: 12, fontWeight: '600' },
+  buttonDisabled: { opacity: 0.4 },
+
+  log: { flex: 1 },
+  logMuted: { color: theme.color.textMuted, fontStyle: 'italic' },
+  chatLine: { paddingVertical: 2, fontSize: 13, lineHeight: 18 },
+  chatAuthor: { color: theme.color.accent, fontWeight: '700' },
+  chatText: { color: theme.color.text },
+
+  composer: { flexDirection: 'row', gap: theme.space(2), paddingVertical: theme.space(3) },
   input: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: theme.color.surface,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.space(3),
+    paddingVertical: theme.space(2.5),
+    color: theme.color.text,
   },
   sendButton: {
-    backgroundColor: '#1565c0',
-    borderRadius: 8,
-    paddingHorizontal: 16,
+    backgroundColor: theme.color.accent,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.space(5),
     justifyContent: 'center',
   },
-  sendButtonDisabled: { backgroundColor: '#90a4ae' },
-  sendButtonText: { color: '#fff', fontWeight: '600' },
+  sendText: { color: theme.color.accentText, fontWeight: '700' },
 });

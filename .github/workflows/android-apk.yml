@@ -1,0 +1,71 @@
+name: Build Android APK
+
+# Builds an installable APK in CI so it can be downloaded straight to a phone
+# from GitHub's web UI — no local Android toolchain, and no Termux.
+#
+# Deliberately a *debug* build: a release APK has to be signed, and an
+# unsigned one won't install on a device at all. Debug builds are signed with
+# Android's universally-available debug keystore, so they install fine.
+# Trade-off: Android will warn on install, and this is not a build to ship to
+# a store — it's a build to actually use the app.
+on:
+  push:
+    branches: ['**']
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The root scripts already fan out across workspaces. A red build here
+      # is worth more than a shipped APK that crashes.
+      - name: Verify before building
+        run: |
+          npm run typecheck
+          npm test
+
+      # `prebuild` generates the native android/ project from app.json. It is
+      # gitignored, so this regenerates it from scratch on every run rather
+      # than depending on committed native code that could drift.
+      - name: Generate native Android project
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build APK
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Name the APK after the commit
+        id: rename
+        run: |
+          mkdir -p dist
+          cp apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk \
+             "dist/showdown-mobile-${GITHUB_SHA::7}.apk"
+          echo "name=showdown-mobile-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.rename.outputs.name }}
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 30
