@@ -1,0 +1,21 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Expo / React Native
+.expo/
+android/
+ios/
+*.apk
+*.aab
+
+# Local secrets — never commit Showdown credentials
+.env
+.env.local
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
