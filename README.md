@@ -359,18 +359,19 @@ plays a turn on it.
   outside the Play Store.
 - **Account login not verified against the real server** — see Verification
   above.
-- **The battle screen has never been used in a real battle** — see
-  Verification above. Treat it as unproven until someone actually plays a
-  turn on a device.
-- **Battle screen is singles-only.** No doubles/triples target selection, no
-  Mega Evolution / Z-Move / Dynamax buttons (Terastallize is the only
-  modifier exposed), team preview is tap-to-append rather than
-  drag-to-reorder, and there are no sprites or move animations — just text,
-  an HP bar, and a status badge.
-- **No in-app way to start a battle.** Challenging someone or searching the
-  ladder isn't built; the battle screen only activates once a match already
-  exists (found via another client, or a `/challenge` typed into lobby
-  chat).
+- **Battle screen is singles-only.** No doubles/triples target selection, and
+  no Mega Evolution / Z-Move / Dynamax buttons — Terastallize is the only
+  modifier exposed, though `packages/battle`'s choice builders support the
+  others already. Team preview is tap-in-lead-order rather than
+  drag-to-reorder.
+- **Sprites are static-per-frame, not animated scenes.** The animated GIFs
+  play, but there are no move animations, no switch transitions, and no
+  field/weather backdrop — the official client's battle *animation* engine
+  is a separate, much larger thing than its sprites.
+- **Only quick-search formats are offered.** The lobby has buttons for a few
+  common formats; challenging a specific player still means typing
+  `/challenge NAME, FORMAT` into lobby chat, and there's no teambuilder, so
+  formats needing your own team aren't really playable yet.
 - **Cold bundles are slow** (~17.5 minutes as of `packages/battle`'s
   `@pkmn/dex` dependency) — see "one more real bug, and one real cost"
   above. Not a hang; don't assume a long-silent `expo start`/`expo export`
